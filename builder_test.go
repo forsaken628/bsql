@@ -207,24 +207,6 @@ func TestUpdate_Build(t *testing.T) {
 		{
 			in: Update{
 				Table: Raw("tb"),
-				Set: MakeSet(map[string]interface{}{
-					"district": 50,
-					"score":    "010",
-				}),
-				Where: SecAND{
-					Raw("foo = ?", "bar"),
-					Raw("age >= ?", 23),
-					MakeIn("sex", []interface{}{"male", "female"}),
-				},
-			},
-			out: outStruct{
-				cond: "UPDATE tb SET district=?,score=? WHERE (foo = ? AND age >= ? AND sex IN (?,?))",
-				vals: []interface{}{50, "010", "bar", 23, "male", "female"},
-			},
-		},
-		{
-			in: Update{
-				Table: Raw("tb"),
 				Set: MakeSetSort(map[string]interface{}{
 					"district": 50,
 					"score":    "010",
@@ -305,15 +287,56 @@ func TestDelete_Build(t *testing.T) {
 }
 
 func TestMakeJoin(t *testing.T) {
-	q, a := MakeJoin(InnerJoin,
-		MakeAlias(Raw("t1"), "t1"),
-		MakeAlias(Raw("t2"), "t2"),
-		Raw("t1.id = t2.id"),
-	).Build()
+	type outStruct struct {
+		cond string
+		vals []interface{}
+	}
+
+	var data = []struct {
+		in  Builder
+		out outStruct
+	}{
+		{MakeJoin(InnerJoin,
+			MakeAlias(Raw("t1"), "t1"),
+			MakeAlias(Raw("t2"), "t2"),
+			Raw("t1.id = t2.id"),
+		), outStruct{
+			cond: "t1 AS t1 JOIN t2 AS t2 ON t1.id = t2.id",
+			vals: nil,
+		}},
+		{MakeJoin(LeftJoin,
+			MakeAlias(Raw("t1"), "t1"),
+			MakeAlias(Raw("t2"), "t2"),
+			Raw("t1.id = t2.id"),
+		), outStruct{
+			cond: "t1 AS t1 LEFT JOIN t2 AS t2 ON t1.id = t2.id",
+			vals: nil,
+		}},
+		{MakeJoin(RightJoin,
+			MakeAlias(Raw("t1"), "t1"),
+			MakeAlias(Raw("t2"), "t2"),
+			Raw("t1.id = t2.id"),
+		), outStruct{
+			cond: "t1 AS t1 RIGHT JOIN t2 AS t2 ON t1.id = t2.id",
+			vals: nil,
+		}},
+		{MakeJoin(CrossJoin,
+			MakeAlias(Raw("t1"), "t1"),
+			MakeAlias(Raw("t2"), "t2"),
+			Raw("t1.id = t2.id"),
+		), outStruct{
+			cond: "t1 AS t1 CROSS JOIN t2 AS t2 ON t1.id = t2.id",
+			vals: nil,
+		}},
+	}
 
 	ass := assert.New(t)
-	ass.Equal("t1 AS t1 JOIN t2 AS t2 ON t1.id = t2.id", q)
-	ass.Empty(a)
+	for _, tc := range data {
+		q, a := tc.in.Build()
+
+		ass.Equal(tc.out.cond, q)
+		ass.Equal(tc.out.vals, a)
+	}
 }
 
 func BenchmarkBuildSelect_Sequelization(b *testing.B) {

@@ -88,7 +88,7 @@ func MakeIn(col string, args []interface{}) Builder {
 }
 
 func MakeJoin(typ int8, t1, t2, on Builder) Builder {
-	args := make([]interface{}, 0)
+	var args []interface{}
 
 	qt1, a := t1.Build()
 	args = append(args, a...)
