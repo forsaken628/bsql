@@ -1,3 +1,9 @@
+# bsql
+
+[![Build Status](https://api.travis-ci.com/forsaken628/bsql.svg?branch=master)](https://www.travis-ci.org/forsaken628/bsql)
+[![Hex.pm](https://img.shields.io/hexpm/l/plug.svg)](https://github.com/github.com/forsaken628/blob/master/LICENSE)
+[![GoDoc](https://godoc.org/github.com/forsaken628/bsql?status.svg)](https://godoc.org/github.com/forsaken628/bsql)
+
 bsql是一个sql辅助库，用于替代繁琐易错的纯手工拼接。
 
 ## 前言
