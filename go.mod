@@ -1,4 +1,4 @@
-module github.com/forsaken628/sql
+module github.com/forsaken628/bsql
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
