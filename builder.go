@@ -17,12 +17,12 @@ type Builder interface {
 	Build() (string, []interface{})
 }
 
-type SecRaw struct {
+type secRaw struct {
 	query string
 	args  []interface{}
 }
 
-func (r SecRaw) Build() (string, []interface{}) {
+func (r secRaw) Build() (string, []interface{}) {
 	return string(r.query), r.args
 }
 
@@ -63,10 +63,105 @@ func (o SecOR) Build() (string, []interface{}) {
 }
 
 func Raw(query string, args ...interface{}) Builder {
-	return SecRaw{
+	return secRaw{
 		query: query,
 		args:  args,
 	}
+}
+
+type SecCase struct {
+	Case Builder
+	When [][2]Builder
+	Else Builder
+}
+
+func (c SecCase) Build() (string, []interface{}) {
+	b := strings.Builder{}
+	args := make([]interface{}, 0)
+	b.WriteString("CASE")
+	if c.Case != nil {
+		q, a := c.Case.Build()
+		b.WriteString(" " + q)
+		args = append(args, a...)
+	}
+	for _, v := range c.When {
+		b.WriteString(" WHEN ")
+		q, a := v[0].Build()
+		b.WriteString(q)
+		args = append(args, a...)
+		b.WriteString(" THEN ")
+		q, a = v[1].Build()
+		b.WriteString(q)
+		args = append(args, a...)
+	}
+	if c.Else != nil {
+		b.WriteString(" ELSE ")
+		q, a := c.Else.Build()
+		b.WriteString(q)
+		args = append(args, a...)
+	}
+	b.WriteString(" END")
+	return b.String(), args
+}
+
+func Func(fn string, builder ...Builder) Builder {
+	raw := secRaw{}
+
+	qs := make([]string, len(builder))
+	for i, v := range builder {
+		q, a := v.Build()
+		qs[i] = q
+		raw.args = append(raw.args, a...)
+	}
+
+	raw.query = fn + "(" + strings.Join(qs, ",") + ")"
+
+	return raw
+}
+
+type SecComma []Builder
+
+func (c SecComma) Build() (string, []interface{}) {
+	b := strings.Builder{}
+	args := make([]interface{}, 0)
+	for i, v := range c {
+		if i != 0 {
+			b.WriteString(",")
+		}
+		q, a := v.Build()
+		b.WriteString(q)
+		args = append(args, a...)
+	}
+	return b.String(), args
+}
+
+func Embed(query string, builder ...Builder) Builder {
+	raw := secRaw{}
+
+	if strings.Count(query, "$") != len(builder) {
+		panic("the number of places does not match")
+	}
+
+	end := len(query)
+	argNum := 0
+	for i := 0; i < end; i++ {
+		lasti := i
+		for i < end && query[i] != '$' {
+			i++
+		}
+		if i > lasti {
+			raw.query += query[lasti:i]
+		}
+		if i >= end {
+			break
+		}
+		q, a := builder[argNum].Build()
+		raw.query += q
+		raw.args = append(raw.args, a...)
+		argNum++
+	}
+
+	return raw
 }
 
 func MakeAlias(b Builder, alias string) Builder {
@@ -74,14 +169,14 @@ func MakeAlias(b Builder, alias string) Builder {
 	if strings.ContainsRune(q, rune(' ')) {
 		q = "(" + q + ")"
 	}
-	return SecRaw{
+	return secRaw{
 		query: q + " AS " + alias,
 		args:  a,
 	}
 }
 
 func MakeIn(col string, args []interface{}) Builder {
-	return SecRaw{
+	return secRaw{
 		query: col + " IN (?" + strings.Repeat(",?", len(args)-1) + ")",
 		args:  args,
 	}
@@ -117,7 +212,7 @@ func MakeJoin(typ int8, t1, t2, on Builder) Builder {
 		panic("")
 	}
 
-	return SecRaw{
+	return secRaw{
 		query: qt1 + join + qt2 + qon,
 		args:  args,
 	}
@@ -148,14 +243,14 @@ func MakeValues(cols []string, values [][]interface{}) (Builder, error) {
 		v = "(" + strings.Join(cols, ",") + ") VALUES "
 	}
 
-	return SecRaw{
+	return secRaw{
 		query: v + s + strings.Repeat(","+s, len(values)-1),
 		args:  args,
 	}, nil
 }
 
 func MakeSet(cols map[string]interface{}) Builder {
-	set := SecRaw{}
+	set := secRaw{}
 	ss := make([]string, 0, len(cols))
 
 	for k, v := range cols {
@@ -168,7 +263,7 @@ func MakeSet(cols map[string]interface{}) Builder {
 }
 
 func MakeSetSort(cols map[string]interface{}) Builder {
-	set := SecRaw{}
+	set := secRaw{}
 	ss := make([]string, 0, len(cols))
 
 	for k := range cols {
@@ -185,13 +280,14 @@ func MakeSetSort(cols map[string]interface{}) Builder {
 }
 
 type SelectRaw struct {
-	Fields  Builder
-	Table   Builder
-	Where   Builder
-	GroupBy Builder
-	Having  Builder
-	OrderBy Builder
-	Limit   Builder
+	Distinct bool
+	Fields   Builder
+	Table    Builder
+	Where    Builder
+	GroupBy  Builder
+	Having   Builder
+	OrderBy  Builder
+	Limit    Builder
 }
 
 func (s SelectRaw) Build() (string, []interface{}) {
@@ -238,17 +334,23 @@ func (s SelectRaw) Build() (string, []interface{}) {
 		args = append(args, a...)
 	}
 
-	return "SELECT " + fields + " FROM " + table + where + groupBy + having + orderBy + limit, args
+	sel := "SELECT "
+	if s.Distinct {
+		sel = "SELECT DISTINCT "
+	}
+
+	return sel + fields + " FROM " + table + where + groupBy + having + orderBy + limit, args
 }
 
 type Select struct {
-	Fields  []string
-	Table   Builder
-	Where   Builder
-	GroupBy string
-	Having  Builder
-	OrderBy []string
-	Limit   []uint
+	Distinct bool
+	Fields   []string
+	Table    Builder
+	Where    Builder
+	GroupBy  string
+	Having   Builder
+	OrderBy  []string
+	Limit    []uint
 }
 
 func (s Select) Build() (string, []interface{}) {
@@ -275,13 +377,14 @@ func (s Select) Build() (string, []interface{}) {
 	}
 
 	return SelectRaw{
-		Fields:  fields,
-		Table:   s.Table,
-		Where:   s.Where,
-		GroupBy: groupBy,
-		Having:  s.Having,
-		OrderBy: orderBy,
-		Limit:   limit,
+		Distinct: s.Distinct,
+		Fields:   fields,
+		Table:    s.Table,
+		Where:    s.Where,
+		GroupBy:  groupBy,
+		Having:   s.Having,
+		OrderBy:  orderBy,
+		Limit:    limit,
 	}.Build()
 }
 

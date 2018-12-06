@@ -129,6 +129,18 @@ func TestSelect_Build(t *testing.T) {
 				vals: []interface{}{"c6", 10, uint(0), uint(10)},
 			},
 		},
+		{
+			in: Select{
+				Distinct: true,
+				Table:    Raw("tb"),
+				Where:    Raw("age > ?", 23),
+				Fields:   []string{"col"},
+			},
+			out: outStruct{
+				cond: "SELECT DISTINCT col FROM tb WHERE age > ?",
+				vals: []interface{}{23},
+			},
+		},
 	}
 
 	ass := assert.New(t)
@@ -286,6 +298,66 @@ func TestDelete_Build(t *testing.T) {
 	}
 }
 
+func TestSecCase(t *testing.T) {
+	type outStruct struct {
+		cond string
+		vals []interface{}
+	}
+	var data = []struct {
+		in  SecCase
+		out outStruct
+	}{
+		{
+			in: SecCase{
+				When: [][2]Builder{
+					{
+						Raw("1"), Raw("'A'"),
+					},
+				},
+			},
+			out: outStruct{
+				cond: "CASE WHEN 1 THEN 'A' END",
+				vals: []interface{}{},
+			},
+		},
+		{
+			in: SecCase{
+				Case: Raw("col"),
+				When: [][2]Builder{
+					{Raw("1"), Raw("'A'")},
+					{Raw("2"), Raw("'B'")},
+				},
+				Else: Raw("null"),
+			},
+			out: outStruct{
+				cond: "CASE col WHEN 1 THEN 'A' WHEN 2 THEN 'B' ELSE null END",
+				vals: []interface{}{},
+			},
+		},
+		{
+			in: SecCase{
+				Case: Raw("?", "col"),
+				When: [][2]Builder{
+					{Raw("?", "when1"), Raw("?", "then1")},
+					{Raw("?", "when2"), Raw("?", "then2")},
+				},
+				Else: Raw("?", "else"),
+			},
+			out: outStruct{
+				cond: "CASE ? WHEN ? THEN ? WHEN ? THEN ? ELSE ? END",
+				vals: []interface{}{"col", "when1", "then1", "when2", "then2", "else"},
+			},
+		},
+	}
+
+	ass := assert.New(t)
+	for _, tc := range data {
+		q, a := tc.in.Build()
+		ass.Equal(tc.out.cond, q)
+		ass.Equal(tc.out.vals, a)
+	}
+}
+
 func TestMakeJoin(t *testing.T) {
 	type outStruct struct {
 		cond string
@@ -328,6 +400,115 @@ func TestMakeJoin(t *testing.T) {
 			cond: "t1 AS t1 CROSS JOIN t2 AS t2 ON t1.id = t2.id",
 			vals: nil,
 		}},
+	}
+
+	ass := assert.New(t)
+	for _, tc := range data {
+		q, a := tc.in.Build()
+
+		ass.Equal(tc.out.cond, q)
+		ass.Equal(tc.out.vals, a)
+	}
+}
+
+func TestEmbed(t *testing.T) {
+	type outStruct struct {
+		cond string
+		vals []interface{}
+	}
+
+	var data = []struct {
+		in  Builder
+		out outStruct
+	}{
+		{
+			Embed("ifnull($,0) as amount", Raw("sum(case is_thaw when 0 then amount_thaw else 0)")),
+			outStruct{
+				cond: "ifnull(sum(case is_thaw when 0 then amount_thaw else 0),0) as amount",
+				vals: nil,
+			},
+		},
+		{
+			Embed("max($,$,$,$)",
+				Raw("?", 1),
+				Raw("?", 2),
+				Raw("?", 3),
+				Raw("?", 4)),
+			outStruct{
+				cond: "max(?,?,?,?)",
+				vals: []interface{}{1, 2, 3, 4},
+			},
+		},
+	}
+
+	ass := assert.New(t)
+	for _, tc := range data {
+		q, a := tc.in.Build()
+
+		ass.Equal(tc.out.cond, q)
+		ass.Equal(tc.out.vals, a)
+	}
+}
+
+func TestFunc(t *testing.T) {
+	type outStruct struct {
+		cond string
+		vals []interface{}
+	}
+
+	var data = []struct {
+		in  Builder
+		out outStruct
+	}{
+		{
+			Func("ifnull", Raw("col"), Raw("0")),
+			outStruct{
+				cond: "ifnull(col,0)",
+				vals: nil,
+			},
+		},
+		{
+			Func("ifnull", Raw("?", 1), Raw("?", 2)),
+			outStruct{
+				cond: "ifnull(?,?)",
+				vals: []interface{}{1, 2},
+			},
+		},
+	}
+
+	ass := assert.New(t)
+	for _, tc := range data {
+		q, a := tc.in.Build()
+
+		ass.Equal(tc.out.cond, q)
+		ass.Equal(tc.out.vals, a)
+	}
+}
+
+func TestSecComma_Build(t *testing.T) {
+	type outStruct struct {
+		cond string
+		vals []interface{}
+	}
+
+	var data = []struct {
+		in  Builder
+		out outStruct
+	}{
+		{
+			SecComma{Raw("a"), Raw("b"), Raw("c")},
+			outStruct{
+				cond: "a,b,c",
+				vals: []interface{}{},
+			},
+		},
+		{
+			SecComma{Raw("?", 1), Raw("?", 2), Raw("?", 3)},
+			outStruct{
+				cond: "?,?,?",
+				vals: []interface{}{1, 2, 3},
+			},
+		},
 	}
 
 	ass := assert.New(t)
