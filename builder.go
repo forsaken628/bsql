@@ -13,6 +13,21 @@ const (
 	CrossJoin
 )
 
+type Nullable interface {
+	Null() bool
+}
+
+func IsNull(b Builder) bool {
+	if b == nil {
+		return true
+	}
+	n, ok := b.(Nullable)
+	if !ok {
+		return false
+	}
+	return n.Null()
+}
+
 type Builder interface {
 	Build() (string, []interface{})
 }
@@ -23,7 +38,7 @@ type secRaw struct {
 }
 
 func (r secRaw) Build() (string, []interface{}) {
-	return string(r.query), r.args
+	return r.query, r.args
 }
 
 type SecAND []Builder
@@ -32,16 +47,33 @@ func (a SecAND) Build() (string, []interface{}) {
 	b := strings.Builder{}
 	args := make([]interface{}, 0)
 	b.WriteString("(")
-	for i, v := range a {
-		if i != 0 {
+	f := false
+	for _, v := range a {
+		if IsNull(v) {
+			continue
+		}
+		if f {
 			b.WriteString(" AND ")
 		}
+		f = true
 		q, a := v.Build()
 		b.WriteString(q)
 		args = append(args, a...)
 	}
 	b.WriteString(")")
 	return b.String(), args
+}
+
+func (a SecAND) Null() bool {
+	if len(a) == 0 {
+		return true
+	}
+	for _, b := range a {
+		if !IsNull(b) {
+			return false
+		}
+	}
+	return true
 }
 
 type SecOR []Builder
@@ -50,10 +82,15 @@ func (o SecOR) Build() (string, []interface{}) {
 	b := strings.Builder{}
 	args := make([]interface{}, 0)
 	b.WriteString("(")
-	for i, v := range o {
-		if i != 0 {
+	f := false
+	for _, v := range o {
+		if IsNull(v) {
+			continue
+		}
+		if f {
 			b.WriteString(" OR ")
 		}
+		f = true
 		q, a := v.Build()
 		b.WriteString(q)
 		args = append(args, a...)
@@ -62,10 +99,64 @@ func (o SecOR) Build() (string, []interface{}) {
 	return b.String(), args
 }
 
+func (o SecOR) Null() bool {
+	if len(o) == 0 {
+		return true
+	}
+	for _, b := range o {
+		if !IsNull(b) {
+			return false
+		}
+	}
+	return true
+}
+
 func Raw(query string, args ...interface{}) Builder {
 	return secRaw{
 		query: query,
 		args:  args,
+	}
+}
+
+func EQ(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " = ?",
+		args:  []interface{}{value},
+	}
+}
+
+func NQ(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " != ?",
+		args:  []interface{}{value},
+	}
+}
+
+func GT(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " > ?",
+		args:  []interface{}{value},
+	}
+}
+
+func GTE(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " >= ?",
+		args:  []interface{}{value},
+	}
+}
+
+func LT(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " < ?",
+		args:  []interface{}{value},
+	}
+}
+
+func LTE(col string, value interface{}) Builder {
+	return secRaw{
+		query: col + " <= ?",
+		args:  []interface{}{value},
 	}
 }
 
@@ -166,11 +257,19 @@ func Embed(query string, builder ...Builder) Builder {
 
 func MakeAlias(b Builder, alias string) Builder {
 	q, a := b.Build()
-	if strings.ContainsRune(q, rune(' ')) {
+	if strings.ContainsRune(q, ' ') {
 		q = "(" + q + ")"
 	}
 	return secRaw{
 		query: q + " AS " + alias,
+		args:  a,
+	}
+}
+
+func Bracket(b Builder) Builder {
+	q, a := b.Build()
+	return secRaw{
+		query: "(" + q + ")",
 		args:  a,
 	}
 }
@@ -300,7 +399,7 @@ func (s SelectRaw) Build() (string, []interface{}) {
 	args = append(args, a...)
 
 	where := ""
-	if s.Where != nil {
+	if !IsNull(s.Where) {
 		q, a := s.Where.Build()
 		where = " WHERE " + q
 		args = append(args, a...)
@@ -347,7 +446,7 @@ type Select struct {
 	Fields   []string
 	Table    Builder
 	Where    Builder
-	GroupBy  string
+	GroupBy  []string
 	Having   Builder
 	OrderBy  []string
 	Limit    []uint
@@ -360,8 +459,8 @@ func (s Select) Build() (string, []interface{}) {
 	}
 
 	var groupBy, orderBy, limit Builder
-	if s.GroupBy != "" {
-		groupBy = Raw(s.GroupBy)
+	if len(s.GroupBy) != 0 {
+		groupBy = Raw(strings.Join(s.GroupBy, ","))
 	}
 
 	if s.OrderBy != nil {
@@ -386,6 +485,22 @@ func (s Select) Build() (string, []interface{}) {
 		OrderBy:  orderBy,
 		Limit:    limit,
 	}.Build()
+}
+
+type UnionAll []Select
+
+func (ua UnionAll) Build() (string, []interface{}) {
+	var (
+		sqls    []string
+		allArgs []interface{}
+	)
+	for _, s := range ua {
+		sql, args := s.Build()
+		sqls = append(sqls, sql)
+		allArgs = append(allArgs, args...)
+	}
+
+	return strings.Join(sqls, " UNION ALL "), allArgs
 }
 
 type Update struct {

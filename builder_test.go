@@ -31,7 +31,7 @@ func TestSelect_Build(t *testing.T) {
 				Fields:  []string{"name", "count(price) as total"},
 				Table:   Raw("tb"),
 				Where:   Raw("age>?", 23),
-				GroupBy: "name",
+				GroupBy: []string{"name"},
 				Having: SecAND{
 					Raw("total >= ?", 1000),
 					Raw("total < ?", 50000),
@@ -50,7 +50,7 @@ func TestSelect_Build(t *testing.T) {
 					Raw("total >= ?", 1000),
 					Raw("total < ?", 50000),
 				},
-				GroupBy: "name",
+				GroupBy: []string{"name"},
 			},
 			out: outStruct{
 				cond: "SELECT name,count(price) as total FROM tb GROUP BY name HAVING (total >= ? AND total < ?)",
@@ -120,7 +120,7 @@ func TestSelect_Build(t *testing.T) {
 				Where: SecAND{
 					Raw("c6 != ?", "c6"),
 				},
-				GroupBy: "name",
+				GroupBy: []string{"name"},
 				Having:  Raw("age > ?", 10),
 				Limit:   []uint{0, 10},
 			},
@@ -532,7 +532,7 @@ func BenchmarkBuildSelect_Sequelization(b *testing.B) {
 				Raw("faith <> ?", "Muslim"),
 			},
 			OrderBy: []string{"age desc"},
-			GroupBy: "department",
+			GroupBy: []string{"department"},
 			Limit:   []uint{0, 100},
 		}.Build()
 	}
